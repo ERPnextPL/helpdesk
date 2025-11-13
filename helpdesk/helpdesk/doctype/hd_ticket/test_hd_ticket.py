@@ -581,6 +581,7 @@ class TestHDTicket(IntegrationTestCase):
         Test that when an agent replies via communication:
         1. first_responded_on is set from communication timestamp
         2. status changes to "Replied" if ticket is not resolved
+        3. Works for both Sent (panel) and Received (email) communications
         """
         # Create a ticket
         ticket = frappe.get_doc(get_ticket_obj())
@@ -589,64 +590,82 @@ class TestHDTicket(IntegrationTestCase):
         # Ensure first_responded_on is not set
         self.assertIsNone(ticket.first_responded_on)
         
-        # Create a communication from an agent (sent)
-        communication = frappe.get_doc({
+        # Test 1: Agent replying via email (Received)
+        communication_email = frappe.get_doc({
             "doctype": "Communication",
             "communication_type": "Communication",
             "communication_medium": "Email",
-            "sent_or_received": "Sent",
+            "sent_or_received": "Received",
             "sender": agent,
-            "content": "Agent reply to ticket",
+            "content": "Agent reply via email to ticket",
             "reference_doctype": "HD Ticket",
             "reference_name": ticket.name,
             "subject": f"Re: {ticket.subject}",
         })
-        communication.insert(ignore_permissions=True)
+        communication_email.insert(ignore_permissions=True)
         
         # Reload ticket and verify
         ticket.reload()
         self.assertIsNotNone(ticket.first_responded_on)
         self.assertEqual(ticket.status, "Replied")
         
-        # Now test that status changes to Replied on subsequent agent replies
+        # Test 2: Agent replying via panel (Sent) - subsequent reply
         ticket.reload()
         ticket.status = "Open"
         ticket.save()
         
-        # Create another communication from agent
-        communication2 = frappe.get_doc({
+        communication_panel = frappe.get_doc({
             "doctype": "Communication",
             "communication_type": "Communication",
             "communication_medium": "Email",
             "sent_or_received": "Sent",
             "sender": agent,
-            "content": "Another agent reply",
+            "content": "Agent reply via panel",
             "reference_doctype": "HD Ticket",
             "reference_name": ticket.name,
             "subject": f"Re: {ticket.subject}",
         })
-        communication2.insert(ignore_permissions=True)
+        communication_panel.insert(ignore_permissions=True)
         
         ticket.reload()
         self.assertEqual(ticket.status, "Replied")
         
-        # Test that Resolved tickets don't change to Replied
+        # Test 3: Customer reply after agent reply (Received from non-agent)
+        ticket.reload()
+        customer_communication = frappe.get_doc({
+            "doctype": "Communication",
+            "communication_type": "Communication",
+            "communication_medium": "Email",
+            "sent_or_received": "Received",
+            "sender": non_agent,
+            "content": "Customer reply",
+            "reference_doctype": "HD Ticket",
+            "reference_name": ticket.name,
+            "subject": f"Re: {ticket.subject}",
+        })
+        customer_communication.insert(ignore_permissions=True)
+        
+        ticket.reload()
+        # Status should change to reopen status for customer reply
+        self.assertNotEqual(ticket.status, "Replied")
+        
+        # Test 4: Resolved tickets don't change to Replied
         ticket.reload()
         ticket.status = "Resolved"
         ticket.save()
         
-        communication3 = frappe.get_doc({
+        communication_resolved = frappe.get_doc({
             "doctype": "Communication",
             "communication_type": "Communication",
             "communication_medium": "Email",
-            "sent_or_received": "Sent",
+            "sent_or_received": "Received",
             "sender": agent,
             "content": "Agent reply after resolved",
             "reference_doctype": "HD Ticket",
             "reference_name": ticket.name,
             "subject": f"Re: {ticket.subject}",
         })
-        communication3.insert(ignore_permissions=True)
+        communication_resolved.insert(ignore_permissions=True)
         
         ticket.reload()
         # Status should remain Resolved, not change to Replied
