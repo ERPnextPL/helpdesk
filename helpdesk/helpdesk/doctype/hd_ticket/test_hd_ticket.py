@@ -576,6 +576,31 @@ class TestHDTicket(IntegrationTestCase):
             ticket.save()
             self.assertEqual(ticket.resolution_time, 30 * 60)
 
+    def test_agent_email_reply_updates_sla(self):
+        ticket = make_ticket(priority="High")
+        self.assertEqual(ticket.agreement_status, "First Response Due")
+
+        ticket.reload()
+        communication = frappe.get_doc(
+            {
+                "doctype": "Communication",
+                "communication_type": "Communication",
+                "communication_medium": "Email",
+                "sent_or_received": "Received",
+                "subject": "Re: Test Ticket",
+                "content": "Agent email reply",
+                "sender": agent,
+                "reference_doctype": "HD Ticket",
+                "reference_name": ticket.name,
+            }
+        )
+        communication.insert(ignore_permissions=True)
+
+        ticket.reload()
+
+        self.assertIsNotNone(ticket.first_responded_on)
+        self.assertEqual(ticket.agreement_status, "Resolution Due")
+
     def tearDown(self):
         remove_holidays()
         frappe.db.set_single_value("HD Settings", "default_ticket_status", "Open")

@@ -294,14 +294,32 @@ class HDTicket(Document):
 
     @property
     def has_agent_replied(self):
-        return frappe.db.exists(
+        if frappe.db.exists(
             "Communication",
             {
                 "reference_doctype": "HD Ticket",
                 "reference_name": self.name,
                 "sent_or_received": "Sent",
             },
+        ):
+            return True
+
+        agent_replies = frappe.get_all(
+            "Communication",
+            filters={
+                "reference_doctype": "HD Ticket",
+                "reference_name": self.name,
+                "sent_or_received": "Received",
+            },
+            pluck="sender",
         )
+
+        for sender in agent_replies:
+            sender_email = parseaddr(sender)[1]
+            if sender_email and is_agent(sender_email):
+                return True
+
+        return False
 
     def validate_feedback(self):
         if (
@@ -875,7 +893,10 @@ class HDTicket(Document):
         # If communication is incoming, then it is a reply from customer, and ticket must
         # be reopened.
         # handle re opening tickets for email
-        if c.sent_or_received == "Received":
+        sender_email = parseaddr(c.sender or "")[1]
+        sender_is_agent = sender_email and is_agent(sender_email)
+
+        if c.sent_or_received == "Received" and not sender_is_agent:
             # check if agent has replied
 
             if self.has_agent_replied:
@@ -883,7 +904,7 @@ class HDTicket(Document):
             else:
                 self.status = self.default_open_status
         # If communication is outgoing, it must be a reply from agent
-        if c.sent_or_received == "Sent":
+        if c.sent_or_received == "Sent" or sender_is_agent:
             # Set first response date if not set already
             self.first_responded_on = (
                 self.first_responded_on or frappe.utils.now_datetime()
