@@ -884,10 +884,23 @@ class HDTicket(Document):
                 self.status = self.default_open_status
         # If communication is outgoing, it must be a reply from agent
         if c.sent_or_received == "Sent":
-            # Set first response date if not set already
-            self.first_responded_on = (
-                self.first_responded_on or frappe.utils.now_datetime()
-            )
+            # Check if sender is an agent
+            sender_is_agent = is_agent(c.sender)
+            
+            if sender_is_agent:
+                # Set first response date from communication timestamp if not set already
+                if not self.first_responded_on:
+                    # Use communication_date if available, otherwise use current time
+                    self.first_responded_on = c.communication_date or frappe.utils.now_datetime()
+                
+                # If ticket is not resolved, change status to "Replied"
+                if self.status_category != "Resolved":
+                    self.status = "Replied"
+            else:
+                # Non-agent outgoing communication
+                self.first_responded_on = (
+                    self.first_responded_on or frappe.utils.now_datetime()
+                )
 
             # TODO: remove this feature once we add automation feature
             if frappe.db.get_single_value("HD Settings", "auto_update_status"):
